@@ -18,6 +18,8 @@ fn main() {
     dotenv::dotenv().ok();
     println!("cargo:rustc-env=WIFI_SSID={}", std::env::var("WIFI_SSID").expect("Set WIFI_SSID in .env"));
     println!("cargo:rustc-env=WIFI_PASS={}", std::env::var("WIFI_PASS").expect("Set WIFI_PASS in .env"));
+    println!("cargo:rustc-env=ENDPOINT_HOST={}", std::env::var("ENDPOINT_HOST").expect("Set ENDPOINT_HOST in .env"));
+    println!("cargo:rustc-env=ENDPOINT_PORT={}", std::env::var("ENDPOINT_PORT").expect("Set ENDPOINT_PORT in .env"));
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());

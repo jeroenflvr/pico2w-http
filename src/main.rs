@@ -51,9 +51,13 @@ async fn main(spawner: Spawner) {
     const WIFI_SSID: &str = env!("WIFI_SSID");
     const WIFI_PASS: &str = env!("WIFI_PASS");
 
+    // These are compile-time strings, parse at runtime
+    let endpoint_host = env!("ENDPOINT_HOST");
+    let endpoint_port: u16 = env!("ENDPOINT_PORT").parse().expect("ENDPOINT_PORT must be a valid u16");
+
     let p = embassy_rp::init(Default::default());
 
-    // Firmware blobs: keep these paths the same as in your working example
+    // Firmware blobs
     let fw  = include_bytes!("../firmware/43439A0.bin");
     let clm = include_bytes!("../firmware/43439A0_clm.bin");
 
@@ -119,7 +123,16 @@ async fn main(spawner: Spawner) {
 
 
     // ---- HTTP POST (raw TCP) ----
-    let remote = IpEndpoint::new(IpAddress::Ipv4(Ipv4Address::new(192, 168, 0, 214)), 9005);
+    // Parse endpoint_host as IPv4 address at runtime
+    let host_bytes: heapless::Vec<u8, 4> = endpoint_host
+        .split('.')
+        .map(|s| s.parse::<u8>().expect("ENDPOINT_HOST must be IPv4"))
+        .collect();
+    ::core::assert!(host_bytes.len() == 4, "ENDPOINT_HOST must have 4 octets");
+    let remote = IpEndpoint::new(
+        IpAddress::Ipv4(Ipv4Address::new(host_bytes[0], host_bytes[1], host_bytes[2], host_bytes[3])),
+        endpoint_port
+    );
 
     let mut rx = [0u8; 1024];
     let mut tx = [0u8; 1024];
