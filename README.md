@@ -1,9 +1,13 @@
 # Raspberry Pi Pico 2W
 
-This is a bit tricky compared to other devices, mostly because of the wifi and its age.
+- [x] read bme280 sensor data
+- [x] blink external led
+- [x] blink on-board led
+- [x] join wifi
+- [x] config with env vars at compile time
+- [x] send HTTP message
 
 
-# challenges
-
-- environment variables
-- wifi
+# use
+- 
+- 
