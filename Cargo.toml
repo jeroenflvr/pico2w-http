@@ -19,7 +19,7 @@ publish = false
 [dependencies]
 embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
 embassy-sync = { version = "0.7.2", features = ["defmt"] }
-embassy-executor = { version = "0.9.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-rp = { version = "0.8.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
 embassy-usb = { version = "0.5.1", features = ["defmt"] }
@@ -35,8 +35,8 @@ defmt-rtt = "1.0.0"
 fixed = "1.23.1"
 fixed-macro = "1.2"
 
-serde = { version = "1.0.203", default-features = false, features = ["derive"] }
-serde-json-core = "0.5.1"
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+serde-json-core = "0.6.0"
 
 # for assign resources example
 assign-resources = { git = "https://github.com/adamgreig/assign-resources", rev = "bd22cb7a92031fb16f74a5da42469d466c33383e" }
@@ -45,36 +45,45 @@ assign-resources = { git = "https://github.com/adamgreig/assign-resources", rev 
 tb6612fng = "1.0.0"
 
 #cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
-cortex-m = { version = "0.7.6", features = ["inline-asm"] }
-cortex-m-rt = "0.7.0"
-critical-section = "1.1"
+cortex-m = { version = "0.7.7", features = ["inline-asm"] }
+cortex-m-rt = "0.7.5"
+critical-section = "1.2.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 display-interface-spi = "0.5.0"
 embedded-graphics = "0.8.1"
-mipidsi = "0.8.0"
+mipidsi = "0.9.0"
 display-interface = "0.5.0"
-byte-slice-cast = { version = "1.2.0", default-features = false }
-smart-leds = "0.3.0"
-heapless = "0.8"
-usbd-hid = "0.8.1"
+byte-slice-cast = { version = "1.2.3", default-features = false }
+smart-leds = "0.4.0"
+heapless = "0.9.1"
+usbd-hid = "0.8.2"
 
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = "1.0"
 embedded-hal-bus = { version = "0.1", features = ["async"] }
 embedded-io-async = { version = "0.6.1", features = ["defmt-03"] }
-embedded-storage = { version = "0.3" }
-static_cell = "2.1"
-portable-atomic = { version = "1.5", features = ["critical-section"] }
-log = "0.4"
-embedded-sdmmc = "0.7.0"
+embedded-storage = { version = "0.3.1" }
+static_cell = "2.1.1"
+portable-atomic = { version = "1.11.1", features = ["critical-section"] }
+log = "0.4.28"
+embedded-sdmmc = "0.9.0"
 bme280-multibus = "0.5"
 
 [build-dependencies]
 dotenv = "0.15"
 
 [profile.release]
-# Enable generation of debug symbols even on release builds
-debug = true
+# Choose ONE of these depending on your priority:
+# Smallest binary (usually best on MCUs)
+# opt-level = "z"
+# OR maximum speed (slightly larger)
+opt-level = 3
+
+lto = true            # Enable link-time optimization (good for size & speed)
+codegen-units = 1     # Better cross-crate optimization
+panic = "abort"       # No unwinding machinery
+debug = false         # Don’t embed DWARF
+strip = true          # (Cargo ≥1.70) strip symbols from final artifacts
 
 [package.metadata.embassy]
 build = [
