@@ -2,11 +2,23 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
+// --- pico2w modules ---
+mod blink;
+mod wifi;
+mod sensor;
+mod http;
+mod payload;
+mod utils;
+
+use crate::blink::blink_led;
+use crate::wifi::join_wifi;
+use crate::utils::convert_to_celsius;
+
+
 use core::str::from_utf8;
 use core::fmt::Write as _;
 
 
-use cyw43::JoinOptions;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use defmt::*;
 use embassy_executor::Spawner;
@@ -17,7 +29,6 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::{Duration, Timer};
-use embedded_io_async::Write;
 use heapless::String;
 use static_cell::StaticCell;
 
@@ -25,7 +36,8 @@ use static_cell::StaticCell;
 
 // SPI (blocking) for Embassy RP
 use embassy_rp::spi::{self, Spi, Config as SpiConfig};
-use bme280_multibus::{Bme280, Sample, Config as bme280_CONFIG, Settings, CtrlMeas, Standby, Filter, Oversampling, Mode, CHIP_ID};
+// use bme280_multibus::{Bme280, Sample, Config as bme280_CONFIG, Settings, CtrlMeas, Standby, Filter, Oversampling, Mode, CHIP_ID};
+use bme280_multibus::{Bme280, Sample};
 
 use embedded_hal_bus::spi::ExclusiveDevice;
 
@@ -55,15 +67,6 @@ async fn net_task(
     runner.run().await
 }
 
-async fn blink_led(led: &mut Output<'static>, times: u8, on_time_ms: u16, off_time_ms: u16) {
-    for _ in 0..times {
-        led.set_high();
-        Timer::after(Duration::from_millis(on_time_ms as u64)).await;
-        led.set_low();
-        Timer::after(Duration::from_millis(off_time_ms as u64)).await;
-    }
-}
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("boot");
@@ -74,7 +77,8 @@ async fn main(spawner: Spawner) {
     // These are compile-time strings, parse at runtime
     let endpoint_host = env!("ENDPOINT_HOST");
     let endpoint_port: u16 = env!("ENDPOINT_PORT").parse().expect("ENDPOINT_PORT must be a valid u16");
-
+    let device_name = env!("DEVICE_NAME");
+    let sensors_route = env!("SENSORS_ROUTE");
     let p = embassy_rp::init(Default::default());
 
     // Firmware blobs
@@ -163,24 +167,16 @@ async fn main(spawner: Spawner) {
     let _ = spawner.spawn(net_task(net_runner));
 
     // Join Wi-Fi
-        // ADC setup for temperature
-        use embassy_rp::adc::{Adc, Channel, Config as AdcConfig, InterruptHandler as AdcInterruptHandler};
-        bind_interrupts!(struct AdcIrqs {
-            ADC_IRQ_FIFO => AdcInterruptHandler;
-        });
-        let mut adc = Adc::new(p.ADC, AdcIrqs, AdcConfig::default());
-        let mut ts = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
+    // ADC setup for temperature
+    use embassy_rp::adc::{Adc, Channel, Config as AdcConfig, InterruptHandler as AdcInterruptHandler};
+    bind_interrupts!(struct AdcIrqs {
+        ADC_IRQ_FIFO => AdcInterruptHandler;
+    });
+    let mut adc = Adc::new(p.ADC, AdcIrqs, AdcConfig::default());
+    let mut ts = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
     // let mut led15 = Output::new(p.PIN_15, Level::Low);
     let start = embassy_time::Instant::now();
-    loop {
-        match control.join(WIFI_SSID, JoinOptions::new(WIFI_PASS.as_bytes())).await {
-            Ok(_) => break,
-            Err(e) => {
-                warn!("join failed: {}", e.status);
-                Timer::after_millis(1000).await;
-            }
-        }
-    }
+    join_wifi(&mut control, WIFI_SSID, WIFI_PASS).await;
 
 
     info!("Wi-Fi joined; waiting link/DHCP");
@@ -204,14 +200,6 @@ async fn main(spawner: Spawner) {
     let mut rx = [0u8; 1024];
     let mut tx = [0u8; 1024];
     let mut buf = [0u8; 256];
-
-    fn convert_to_celsius(raw_temp: u16) -> f32 {
-        // According to chapter 12.4.6 Temperature Sensor in RP235x datasheet
-        let temp = 27.0 - (raw_temp as f32 * 3.3 / 4096.0 - 0.706) / 0.001721;
-        let sign = if temp < 0.0 { -1.0 } else { 1.0 };
-        let rounded_temp_x10: i16 = ((temp * 10.0) + 0.5 * sign) as i16;
-        (rounded_temp_x10 as f32) / 10.0
-    }
 
     loop {
         // Blink once before sending (250ms on, 250ms off)
@@ -244,52 +232,41 @@ async fn main(spawner: Spawner) {
         // Calculate uptime in seconds
         let uptime = (embassy_time::Instant::now() - start).as_secs();
 
-        let mut body: heapless::String<256> = heapless::String::new();
-        core::write!(
-            &mut body,
-            "{{\
-                \"name\":\"pico2-01\",\
-                \"rpi_temp\":{:.1},\
-                \"temp\":{:.1},\
-                \"pressure\":{:.1},\
-                \"humidity\":{:.1},\
-                \"ip_address\":\"{}\",\
-                \"uptime\":{}\
-            }}",
-            temp_c,           // board (ADC) temp — keep
-            bme_temp_c,       // BME280 ambient temp
-            bme_press_hpa,    // hPa
-            bme_hum,          // %RH
-            ip,
+        // Build JSON body via module helper
+        let env = crate::sensor::Env { temperature_c: bme_temp_c, pressure_hpa: bme_press_hpa, humidity_pct: bme_hum };
+        let mut ip_s: heapless::String<24> = heapless::String::new();
+        let _ = core::write!(&mut ip_s, "{}", ip);
+        let body = crate::payload::build_payload::<256>(
+            device_name,
+            temp_c,
+            Some(env),
+            ip_s.as_str(),
             uptime
-        ).unwrap();
+        );
 
-        // Build minimal request in a heapless String
-        // let mut body: String<192> = String::new();
-        // core::write!(
-        //     &mut body,
-        //     "{{\"name\":\"pico2-01\",\"temp\":{:.1},\"pressure\":1013,\"humidity\":88,\"ip_address\":\"{}\",\"uptime\":{}}}",
-        //     temp_c, ip, uptime
-        // ).unwrap();
         let mut req: String<256> = String::new();
         core::write!(
             &mut req,
-            "POST /sensors HTTP/1.1\r\n\
-             Host: 192.168.0.214:9005\r\n\
+            "POST {} HTTP/1.1\r\n\
+             Host: {}:{}\r\n\
              Content-Type: application/json\r\n\
              Content-Length: {}\r\n\
              Connection: close\r\n\
              \r\n",
+            sensors_route,
+            endpoint_host,
+            endpoint_port,
             body.len()
         ).unwrap();
         req.push_str(&body).unwrap();
 
         // Open TCP and send
         let mut sock = TcpSocket::new(stack, &mut rx, &mut tx);
-        info!("connect");
-        sock.connect(remote).await.unwrap();
-        sock.write_all(req.as_bytes()).await.unwrap();
-        sock.flush().await.unwrap();
+        let mut host_hdr: heapless::String<64> = heapless::String::new();
+        let _ = core::write!(&mut host_hdr, "{}:{}", endpoint_host, endpoint_port);
+        if let Err(e) = crate::http::post_json::<256>(&mut sock, remote, host_hdr.as_str(), sensors_route, &body).await {
+            warn!("http post error: {}", e);
+        }
 
         // Optional: read a bit of the response
         if let Ok(n) = sock.read(&mut buf).await {
