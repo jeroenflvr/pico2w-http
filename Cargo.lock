@@ -122,6 +122,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bme280-multibus"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "658e012a6ce0784450ff5e3ee0187a557b81fcd048c971bd4a3c53e5c145dabd"
+dependencies = [
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
+
+[[package]]
 name = "bt-hci"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1330,6 +1341,7 @@ name = "pico2w-http"
 version = "0.1.0"
 dependencies = [
  "assign-resources",
+ "bme280-multibus",
  "byte-slice-cast",
  "cortex-m",
  "cortex-m-rt",

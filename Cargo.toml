@@ -67,6 +67,7 @@ static_cell = "2.1"
 portable-atomic = { version = "1.5", features = ["critical-section"] }
 log = "0.4"
 embedded-sdmmc = "0.7.0"
+bme280-multibus = "0.5"
 
 [build-dependencies]
 dotenv = "0.15"
