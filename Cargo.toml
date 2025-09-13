@@ -9,7 +9,7 @@
 
 
 [package]
-edition = "2021"
+edition = "2024"
 name = "pico2w-http"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
